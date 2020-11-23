@@ -1,0 +1,3 @@
+[submodule "d3-wordcloud"]
+	path = d3-wordcloud
+	url = https://github.com/wvengen/d3-wordcloud.git

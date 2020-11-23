@@ -1,0 +1,25 @@
+* Custom Google Ngrams Search
+
+The [[https://books.google.com/ngrams][Google Ngrams Viewer]] is really neat. You can use it to compare the frequency of certain terms in millions of books across a timeseries of centuries.
+
+But what if you have an advanced use-case, or run up against limitations in the Google interface? For example, maybe you want to:
+
+ - Search for /bear/ as a noun (i.e. the animal) instead of /bear/ as a verb (i.e. to endure).
+ - Search for expressions where one word is unknown, like "capable of ___ing," and fill in the blanks with all possible responses.
+ - Do a regular expression search.
+
+* Usage
+
+1. Make sure you have [[https://nixos.org/][the Nix package manager]] installed. On Linux or MacOS, you can usually do this with
+
+#+BEGIN_SRC sh
+$ sh <(curl https://nixos.org/nix/install)
+#+END_SRC
+
+1. Download the data from Google, using the download script (TODO). There are a LOT of data. You will need many around 20GB of space free for just 2-grams, and around 100GB of space free for everything.
+
+2. Run the script:
+
+#+BEGIN_SRC sh
+cabal run custom-ngrams-search -- searchTerm
+#+END_SRC
