@@ -26,6 +26,7 @@ executable custom-ngrams-search
                      , aeson
                      , lucid
                      , turtle
+                     , string-conversions
                      , HandsomeSoup
                      , hxt
   -- hs-source-dirs:
