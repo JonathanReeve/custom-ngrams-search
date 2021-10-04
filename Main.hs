@@ -1,118 +1,108 @@
-#! /usr/bin/env nix-shell
-#! nix-shell -i runghc --packages "ghc.withPackages (pkgs: with pkgs; [ turtle lucid aeson ])"
-
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
- 
-import Turtle
-import qualified Control.Foldl as F
-import Prelude hiding (readFile, writeFile, FilePath)
-import Data.List as L hiding (find)
-import Data.Function (on)
-import qualified Data.Text as T hiding (find)
-import Data.Text.Encoding (encodeUtf8)
-import Data.Map as M hiding (fold)
-import Data.Maybe
-import Lucid
-import Data.Aeson
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+
+module Main where
+
+import Data.List
+import qualified Control.Foldl as Fold
+import "Glob" System.FilePath.Glob (glob)
+import qualified Codec.Compression.GZip as GZip
+import Text.JSON.Generic
 import GHC.Generics (Generic)
-import qualified Data.ByteString.Lazy as B
+import Turtle
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString.Lazy.UTF8 as UTF
+import qualified Data.Text as T
+import qualified Data.ByteString.Lazy.Char8 as Char8
 
-data Counts = Counts { text :: Text
-                     , size :: Int } deriving (Show, Generic)
-instance ToJSON Counts
+-- Find the first and last lines of each gzipped file
+-- So that we know where to direct our searches
 
-type Color = Text
+data WordBounds = WordBounds { zipFile :: Prelude.FilePath
+                             , start :: BS.ByteString
+                             , end :: BS.ByteString
+                             } deriving (Show, Generic, Data)
 
+-- Gets the first words of the first and last lines.
+wordBounds :: Prelude.FilePath -> IO WordBounds
+wordBounds fn = do
+  content <- fmap GZip.decompress (BS.readFile fn)
+  let lines = BS.split 10 content
+  let firstWord = head $ BS.split 9 $ head lines
+  -- Handle ending lines with no tabs in them (blank lines?)
+  let noTab line = null (BS.split 9 line)
+  let cleanLast = dropWhileEnd noTab lines
+  let lastWord = head $ BS.split 9 $ last cleanLast
+  return WordBounds { zipFile = fn, start = firstWord, end = lastWord }
+
+boundsFile = "data/bounds.json"
+boundsFileP = decodeString boundsFile
+
+writeWordBounds = do
+  files <- glob "data/*.gz"
+  bounds <- mapM wordBounds files
+  let jsondata = encodeJSON bounds
+  BS.writeFile boundsFile (UTF.fromString jsondata)
+
+-- | Select the file we need, based on the query.
+-- selectFile query =
+
+-- To select the file for our given query, we use two filters:
+-- The first one selects the first number (the n- value).
+-- The second one looks up of first word of the query.
+
+-- | Find the ngram n- value for a WordBounds filename
+boundsToN :: WordBounds -- ^ the WordBounds data structure to be extracted from
+  -> Int -- ^ the n-value of that filename
+boundsToN f = read $ take 1 $ drop 5 $ zipFile f
+
+-- | Is our query in bounds for the n-value of the target filename?
+-- That is, if our query is a 1-gram, does our filename start with "1-"?
+inBoundsForN :: UTF.ByteString -- ^ The query
+  -> WordBounds                -- ^ The bounds to compare to
+  -> Bool                      -- ^ Does it start with the right number?
+inBoundsForN q wb = length (Char8.words q) == boundsToN wb
+
+-- | Compare first query word to starts of remaining files
+withinBounds :: UTF.ByteString -- ^ The query string
+  -> WordBounds                 -- ^ The bounds to compare to
+  -> Bool                       -- ^ Whether it is in bounds for the file
+withinBounds q wb = case length (Char8.words q) of
+  0 -> error "You must supply a query."
+  1 -> True -- One-grams are all in one file
+  _ -> q > start wb && q < end wb
+
+selectFile :: UTF.ByteString -- ^ The query string
+  -> [WordBounds]            -- ^ The bounds to compare to
+  -> Prelude.FilePath
+selectFile q wbs = case filter (withinBounds q) (filter (inBoundsForN q) wbs) of
+  [] -> error "Can't find an appropriate file. Maybe n-value is too big?"
+  xs -> zipFile $ head xs
+
+
+parser :: Parser Text
+parser = optText "query" 'q' "Word(s) you want to look up, with optional _POSs."
+
+greeting :: String
+greeting = concat [ "This program searches Google Books ngram data for advanced queries."
+                  , "\nExamples: " ,  "\n -q Dracula "
+                  , "\n -q bank_NOUN " ,  "\n -q \"river bank_NOUN\""]
 main :: IO ()
 main = do
-  let colorList = ["white", "black", "red", "green", "yellow", "blue", "brown", "purple", "violet", "pink", "orange", "gray", "greenish", "reddish", "bluish"]
-  wordClouds <- mapM makeWordCloud colorList
-  -- let wordClouds = makeWordCloud <$> colorList
-  renderToFile "wordcloud.html" $ html $ mconcat wordClouds
-
-makeWordCloud :: Text -> IO (Html ())
-makeWordCloud color = do
-  stats <- fold (getStats color) F.head
-  let wordClouds = wordCloud color (fromJust stats)
-  return wordClouds
-  
-
-getStats :: Text -> Shell [Counts]
-getStats color = do
-  echo "Getting stats"
-  -- liftIO $ putStrLn "Getting color stats for: " <> color
-  let searchPat = Turtle.text $ T.take 2 color <> ".gz"
-      filesToSearch = find (suffix searchPat) "data"
-  view filesToSearch
-  -- stdout $ inproc "gunzip" filesToSearch empty
-  -- view $ grepAll filesToSearch pat
-  files <- fold filesToSearch F.list
-  fs <- select files
-  lineList <- fold (do
-    let grepped = inproc "rg" ["-z", "-e", color, format fp fs] Turtle.empty
-    let filtered = grep (greenPat color) grepped
-    filtered) F.list
-  let instances = do [(item1 line,item3 line) | line <- lineList ] where
-        item1 = (!! 0) . T.splitOn "_" . (!! 1) . T.splitOn " " . (!! 0) . cut tab . lineToText
-        item3 :: Line -> Int
-        item3 = read . T.unpack . (!! 3) . cut tab . lineToText
-  let countsMap = fromListWith (+) instances
-  let sortedList = L.take 100 $ L.sortBy (flip compare `on` snd) $ toList countsMap
-  let minCount = minimum [snd pair | pair <- sortedList]
-  let countsObjs = [Counts first (second `div` minCount) | (first, second) <- sortedList]
-  -- liftIO $ print counts
-  return countsObjs
-
-
-greenPat pat = begins $ (Turtle.text pat <|> (Turtle.text pat <> "_ADJ")) <> spaces1 <> chars1 <> "_NOUN"
-
--- Obtained via, e.g., d3.schemeReds[9].slice(-4,-1)
-getColors c = T.pack $ show colors where
-  purples = ["#807dba", "#6a51a3", "#54278f"]
-  reds = ["#ef3b2c", "#cb181d", "#a50f15"]
-  greens = ["#41ab5d", "#238b45", "#006d2c"]
-  blues = ["#4292c6", "#2171b5", "#08519c"]
-  colors = case c of
-    "green" -> greens
-    "greenish" -> greens
-    "blue" -> blues
-    "bluish" -> blues
-    "purple" -> purples
-    "violet" -> purples
-    "orange" -> ["#f16913", "#d94801", "#a63603"]
-    "red" -> reds
-    "reddish" -> reds
-    "black" -> ["#737373", "#525252", "#252525"]
-    "white" -> ["#c1c1c1", "#d8d6d6", "#ede8e8"]
-    "gray" -> ["#737373", "#525252", "#252525"]
-    "pink" -> ["#ed2dbd", "#ea75cd", "#efb1e0"]
-    "brown" -> ["#493e32", "#8c663d", "#bc7121"]
-    "yellow" -> ["#efef0b", "#efef6e", "#f7f7be"]
-
-html :: Html () -> Html ()
-html wordclouds = html_ $ do
-  head_ $ do
-    mapM_ (\src -> script_ [src_ src, charset_ "utf-8"] T.empty)
-      [ "/04-colors/includes/d3.js"
-      , "/04-colors/includes/d3.layout.cloud.js"
-      , "/04-colors/includes/d3.wordcloud.js"
-      ]
-  body_ $ main_ [class_ "cloudsContainer", style_ "display: flex; flex-wrap: wrap;"] wordclouds
-
-
-wordCloud :: Text -> [Counts] -> Html ()
-wordCloud color counts = do
-  div_ [class_ "cloudContainer", style_ "display: flex; flex-direction: column;"] $ do
-    let colorStyle = style_ ("color:" <> color <> "; text-align: center; background: none;")
-    h2_ [colorStyle] $ toHtml color
-    a_ [href_ ("/04-colors/custom-ngrams-search/categorize-words/" <> color <> ".html"), colorStyle] $
-      div_ [id_ color ] ""
-    footer_ $ do
-      script_ [] $ B.concat [ "const ", B.fromStrict (encodeUtf8 color), " = ", encode counts]
-      script_ [] $ T.concat ["d3.wordcloud().size([500, 300])"
-                            , ".selector('#", color, "')"
-                            , ".fill(d3.scale.ordinal().range(", getColors color ,"))"
-                            , ".words(", color, ").start()"
-                            ]
+  -- Test whether we have WordBounds
+  exists <- testfile boundsFileP
+  unless exists writeWordBounds
+  boundsJSON <- readFile boundsFile
+  let bounds = decodeJSON boundsJSON :: [WordBounds]
+  query <- options (fromString greeting) parser
+  -- let selectedFile = selectFile bounds query
+  let queryUTF = UTF.fromString (T.unpack query)
+  let filename = selectFile queryUTF bounds
+  print filename
+  let grepped = inproc "rg" ["-z", "-e", query, T.pack filename] Turtle.empty
+                          -- T.pack query, format fp filename] empty
+  view grepped
