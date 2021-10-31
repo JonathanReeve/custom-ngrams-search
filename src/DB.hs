@@ -22,30 +22,31 @@ import           Database.Persist
 import           Database.Persist.Sqlite
 import           Database.Persist.TH
 import           Prelude hiding (Word)
+import           Data.Text
 
 data POS = Noun | Verb | Adj | Punct deriving (Show, Read, Eq)
 derivePersistField "POS"
 
 data Word = Word
   { orth :: String
-  , pos :: POS
+  , pos :: Maybe POS
   } deriving (Show, Read, Eq)
 derivePersistField "Word"
 
+data Ngram = Ngram
+  { nValue :: Int
+  , w1 :: Word
+  , w2 :: Maybe Word
+  , w3 :: Maybe Word
+  , w4 :: Maybe Word
+  , w5 :: Maybe Word
+  , years :: Text
+  } deriving (Show, Read, Eq)
+derivePersistField "Ngram"
+
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
-Ngram
-    nValue Int
-    firstWord String
-    firstWordPOS String Maybe
-    secondWord String Maybe
-    secondWordPOS String Maybe
-    thirdWord String Maybe
-    thirdWordPOS String Maybe
-    fourthWord String Maybe
-    fourthWordPOS String Maybe
-    fifthWord String Maybe
-    fifthWordPOS String Maybe
-    years String
+NgramData
+    gram Ngram
     deriving Show
 |]
 

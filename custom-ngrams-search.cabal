@@ -17,6 +17,7 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md, README.org
 
 executable custom-ngrams-search
+  hs-source-dirs:      src
   main-is:             Main.hs
   other-modules:       DownloadData
                      , Scrape
