@@ -1,70 +1,32 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-{-# LANGUAGE ScopedTypeVariables #-}
-import qualified Data.ByteString.Char8 as B8
-import Network.HTTP.Simple
-    ( getResponseBody, httpBS, parseRequest )
-import Network.URI ( pathSegments )
-import Text.Printf ( printf )
+module Scrape where
+
 import Network.HTTP.Client.Conduit ( getUri, Request )
-import Data.ByteString.Char8 (ByteString)
-import Turtle hiding ( printf )
-import Data.Text (pack)
+import Text.XML.HXT.Core
+import Text.HandsomeSoup
+import qualified Data.Text as T
+import qualified Data.ByteString.Lazy.Char8 as C8
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString.Lazy.UTF8 as UTF
+import Text.JSON.Generic
 
-{-
+import Main hiding (main)
 
-Version 20200217 of the English Fiction ngrams dataset.
+scrape url = runX $ fromUrl url >>> css "li a" >>> (getAttrValue "href" &&& (deep getText))
 
-URLs look like this:
+-- We have a pair of links, and we want to get the bounds from the second and add them to the first.
+-- Let's make a WordBounds object of it.
+findEnds :: ((String, String), (String, String)) -> WordBounds
+findEnds ((url, start), (url', start')) = WordBounds { zipFile = url, start = C8.pack start, end = C8.pack start' }
 
-http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/1-00000-of-00001.gz
-http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/2-00001-of-00047.gz
-http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/3-00000-of-00549.gz
-http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/4-00000-of-00515.gz
-http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/5-00000-of-01449.gz
-
--}
-
-
-formatUrl :: (Int, Int) -> [String]
-formatUrl (a, b) = [ prefix ++ printf "%1d-%05d-of-%05d.gz" a n b | n <- [0..b-1] ] where
-  prefix = "http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/"
-
-
--- wget :: Request -> IO ()
--- wget url = do
---   resp <- httpBS url
---   let fileName = Prelude.last . pathSegments . getUri $ url
---   let body = getResponseBody resp :: ByteString
---   B8.writeFile fileName body
-  -- print fileName
-
-wget :: String -> IO ()
-wget url = do
-  req <- parseRequest url
-  let fileName = Prelude.last . pathSegments . getUri $ req
-  -- Does it exist?
-  exists <- testfile (decodeString fileName)
-  if exists then putStrLn ("File " <> fileName <> " already exists.")
-    else view $ inshell ("wget " <> pack url) empty
-
-main :: IO ()
 main = do
-  let patterns = [(1, 1), (2, 47), (3, 549), (4, 515), (5, 1449)]
-  let urls :: [String] = concatMap formatUrl patterns
-
-  mapM_ wget urls
-
-  -- let url = "http://storage.googleapis.com/books/ngrams/books/datasetsv3.html"
-  -- contents <- httpBS url
-  -- print contents
-  -- 2. Get list of article URLs
-  -- let doc = fromUrl url
-  -- urlList <- runX $ doc >>> css "h3" /> getText
-  -- print urlList
-  -- 3. For each article URL, get the HTML file
-  -- B8.putStrLn . getResponseBody $ contents
-  -- let doc = fromUrl "1921apr-1.html"
-  -- text <- runX $ doc >>> css "div.sqs-block-html" -- //> getText
-  -- title <- runX $ doc >>> css "h1" /> getText
-  -- print text
+  let urls = ["http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/eng-fiction-"
+              <> show n <> "-ngrams_exports.html" | n <- [1..5]]
+  let url = urls !! 1
+  links <- mapM scrape urls
+  let links' = concat links -- flatten
+  let zipped = zip links' (tail links')
+  let bounds = map findEnds zipped
+  let boundsEncoded = encodeJSON bounds
+  BS.writeFile "bounds.json" (UTF.fromString boundsEncoded)

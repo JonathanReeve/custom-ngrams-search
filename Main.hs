@@ -27,29 +27,9 @@ data WordBounds = WordBounds { zipFile :: Prelude.FilePath
                              , end :: BS.ByteString
                              } deriving (Show, Generic, Data)
 
--- Gets the first words of the first and last lines.
-wordBounds :: Prelude.FilePath -> IO WordBounds
-wordBounds fn = do
-  content <- fmap GZip.decompress (BS.readFile fn)
-  let lines = BS.split 10 content
-  let firstWord = head $ BS.split 9 $ head lines
-  -- Handle ending lines with no tabs in them (blank lines?)
-  let noTab line = null (BS.split 9 line)
-  let cleanLast = dropWhileEnd noTab lines
-  let lastWord = head $ BS.split 9 $ last cleanLast
-  return WordBounds { zipFile = fn, start = firstWord, end = lastWord }
-
-boundsFile = "data/bounds.json"
+boundsDir = "data/"
+boundsFile = boundsDir ++ "bounds.json"
 boundsFileP = decodeString boundsFile
-
-writeWordBounds = do
-  files <- glob "data/*.gz"
-  bounds <- mapM wordBounds files
-  let jsondata = encodeJSON bounds
-  BS.writeFile boundsFile (UTF.fromString jsondata)
-
--- | Select the file we need, based on the query.
--- selectFile query =
 
 -- To select the file for our given query, we use two filters:
 -- The first one selects the first number (the n- value).
@@ -58,7 +38,8 @@ writeWordBounds = do
 -- | Find the ngram n- value for a WordBounds filename
 boundsToN :: WordBounds -- ^ the WordBounds data structure to be extracted from
   -> Int -- ^ the n-value of that filename
-boundsToN f = read $ take 1 $ drop 5 $ zipFile f
+boundsToN f = read $ take 1 $ encodeString $ basename $ decodeString $ zipFile f
+
 
 -- | Is our query in bounds for the n-value of the target filename?
 -- That is, if our query is a 1-gram, does our filename start with "1-"?
@@ -83,6 +64,10 @@ selectFile q wbs = case filter (withinBounds q) (filter (inBoundsForN q) wbs) of
   [] -> error "Can't find an appropriate file. Maybe n-value is too big?"
   xs -> zipFile $ head xs
 
+-- | We have a URL filepath like "http://storage.googleapis.com/books/ngrams/books/20200217/eng-fiction/1-00000-of-00001.gz"
+-- But we want a filepath like "data/1-00000-of-00001.gz"
+remoteToLocal :: Prelude.FilePath -> Prelude.FilePath
+remoteToLocal = (boundsDir ++) . encodeString . filename . decodeString
 
 parser :: Parser Text
 parser = optText "query" 'q' "Word(s) you want to look up, with optional _POSs."
@@ -94,8 +79,8 @@ greeting = concat [ "This program searches Google Books ngram data for advanced 
 main :: IO ()
 main = do
   -- Test whether we have WordBounds
-  exists <- testfile boundsFileP
-  unless exists writeWordBounds
+  -- exists <- testfile boundsFileP
+  -- unless exists writeWordBounds
   boundsJSON <- readFile boundsFile
   let bounds = decodeJSON boundsJSON :: [WordBounds]
   query <- options (fromString greeting) parser
@@ -103,6 +88,8 @@ main = do
   let queryUTF = UTF.fromString (T.unpack query)
   let filename = selectFile queryUTF bounds
   print filename
-  let grepped = inproc "rg" ["-z", "-e", query, T.pack filename] Turtle.empty
+  let localFilename = remoteToLocal filename
+  print localFilename
+  let grepped = inproc "rg" ["-z", "-e", query, T.pack localFilename] Turtle.empty
                           -- T.pack query, format fp filename] empty
   view grepped
