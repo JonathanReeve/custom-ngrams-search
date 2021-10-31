@@ -21,14 +21,21 @@ import           Control.Monad.IO.Class  (liftIO)
 import           Database.Persist
 import           Database.Persist.Sqlite
 import           Database.Persist.TH
-import           Prelude hiding (Word)
-import           Data.Text
-
+import           Prelude hiding (Word, words, unwords)
+import           Data.Text as T hiding (drop, head, tail)
+import           Data.Text.IO as TIO (readFile)
 import           Types
 
+
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
-NgramData
-    gram Ngram
+Ngram
+    n Int
+    w1 Word Maybe
+    w2 Word Maybe
+    w3 Word Maybe
+    w4 Word Maybe
+    w5 Word Maybe
+    years Text
     deriving Show
 |]
 
@@ -40,22 +47,55 @@ NgramData
 -- 2005,3,3 2006,2,2 2007,5,3 2008,5,5 2009,3,3 2010,2,2 2011,13,4 2012,6,6
 -- 2013,6,5 2014,11,9 2015,6,4 2016,4,3 2017,7,4 2018,2,2 2019,5,3
 
-parseWord = span (/= '_')
+parseWord :: Text -> Maybe Word
+parseWord w = case T.find (== '_') w of
+  Nothing -> Just $ Word w Nothing -- No POS
+  Just _ -> case w of
+    "_END_" -> Nothing
+    "__" -> Just $ Word "_" (Just Punct) -- Assuming "__" is an actual underscore
+    _ -> case Prelude.filter (\s -> T.length s > 0) (splitOn "_" w) of
+      [orth] -> Just $ Word orth Nothing -- Without POS
+      [orth, pos] -> Just $ Word orth (parsePOS pos) -- with POS
+      [orth, pos, xs] -> Nothing -- error $ "Got extra stuff! : " ++ T.unpack w
+      _ -> Nothing -- error $ "Got unexpected input! : " ++ T.unpack w
 
-parseLine :: String -> Int -> Ngram
-parseLine line n = case n of
-  1 -> let (w1, w1pos) = parseWord (head (words line))
-           yearsData = unwords (tail (words line))
-    in Ngram 1 w1 (Just w1pos) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing yearsData
-  2 -> let (w1, w1pos) = parseWord (head (words line))
-           (w2, w2pos) = parseWord (head (tail (words line)))
-           yearsData = unwords (drop 2 (words line))
-    in Ngram 2 w1 (Just w1pos) (Just w2) (Just w2pos) Nothing Nothing Nothing Nothing Nothing Nothing yearsData
+parsePOS :: Text -> Maybe POS
+parsePOS posRaw = case posRaw of
+  "NOUN" -> Just Noun
+  "VERB" -> Just Verb
+  "ADJ" -> Just Adj
+  "NUM" -> Just Num
+  "PRT" -> Just Prt
+  "ADP" -> Just Adp
+  "." -> Just Punct
+  "" -> Nothing
+  _ -> Nothing
+
+
+parseLine :: Int -> Text -> Ngram
+parseLine n line =
+  let lineWords = words line
+      firstWord = head lineWords
+  in case n of
+    1 -> let w1 = parseWord firstWord
+             yearsData = unwords (tail lineWords)
+         in Ngram 1 w1 Nothing Nothing Nothing Nothing yearsData
+    2 -> let w1 = parseWord (head lineWords)
+             w2 = parseWord (head (tail lineWords))
+             yearsData = unwords (drop 2 lineWords)
+         in Ngram 2 w1 w2 Nothing Nothing Nothing yearsData
 
 main :: IO ()
-main = runSqlite "test.db" $ do
+main = do
+  f <- TIO.readFile "../data/2-00000-of-00047"
+  -- let l = head $ Data.Text.lines f
+  --     parsedLine = parseLine l 2
+  let parsedNgrams = fmap (parseLine 2) (T.lines f) :: [Ngram]
+  runSqlite "test.db" $ do
     runMigration migrateAll
-    let testItem = Ngram 2 "test" (Just "NOUN") (Just "testing") (Just "NOUN") Nothing Nothing Nothing Nothing Nothing Nothing ""
-    insert testItem
-    selected <- selectList [NgramFirstWord ==. "test"] [LimitTo 1]
+    -- let testWord = Word "test" (Just Noun)
+    -- let testItem = Ngram 2 testWord (Just testWord) Nothing Nothing Nothing "1981,1,2"
+    -- insert testItem
+    insertMany parsedNgrams
+    selected <- selectList [NgramW1 ==. ngramW1 (parsedNgrams !! 1)] [LimitTo 1]
     liftIO $ print selected
