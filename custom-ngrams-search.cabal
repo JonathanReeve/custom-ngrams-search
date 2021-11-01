@@ -50,5 +50,6 @@ executable custom-ngrams-search
                      , optparse-applicative
                      , regex-tdfa
                      , word8
+                     , filepath
   -- hs-source-dirs:
   default-language:    Haskell2010

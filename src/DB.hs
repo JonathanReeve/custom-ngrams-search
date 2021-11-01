@@ -12,12 +12,16 @@
 {-# LANGUAGE QuasiQuotes                #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE PackageImports #-}
 
 -- |
 
 module DB where
 
 import           Control.Monad.IO.Class  (liftIO)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+import qualified Codec.Compression.GZip as GZip
 import           Data.Text as T hiding (tail, head, drop)
 import           Database.Persist
 import           Database.Persist.Sqlite
@@ -25,7 +29,13 @@ import           Database.Persist.TH
 import           Prelude hiding (Word, words, unwords)
 import           Data.Text as T hiding (tail, head, drop, drop, head, tail)
 import           Data.Text.IO as TIO (readFile)
+import "Glob"    System.FilePath.Glob (glob)
+import           System.FilePath.Posix
+
 import           Types
+import Data.Text.Encoding (decodeUtf8)
+import Data.ByteString.Lazy (toStrict)
+
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
@@ -36,7 +46,7 @@ Ngram
     w3 Word Maybe
     w4 Word Maybe
     w5 Word Maybe
-    years YearsData
+    years Text
     deriving Show
 |]
 
@@ -81,37 +91,49 @@ parseLine n line =
       firstWord = head lineWords
   in case n of
     1 -> let w1 = parseWord firstWord
-             yearsData = parseYears $ unwords (tail lineWords)
+             yearsData = unwords (tail lineWords)
          in Ngram 1 w1 Nothing Nothing Nothing Nothing yearsData
     2 -> let w1 = parseWord (head lineWords)
              w2 = parseWord (head (tail lineWords))
-             yearsData = parseYears $ unwords (drop 2 lineWords)
+             yearsData = unwords (drop 2 lineWords)
          in Ngram 2 w1 w2 Nothing Nothing Nothing yearsData
 
-parseYears :: Text -> [YearData]
-parseYears years = do
-  let yearList =  T.splitOn "," <$> words years :: [[Text]]
-  let yearsAsInts = fmap (fmap (read . T.unpack)) yearList :: [[Int]]
-  fmap parseYearDatum yearsAsInts
+-- parseYears :: Text -> [YearData]
+-- parseYears years = do
+--   let yearList =  T.splitOn "," <$> words years :: [[Text]]
+--   let yearsAsInts = fmap (fmap (read . T.unpack)) yearList :: [[Int]]
+--   fmap parseYearDatum yearsAsInts
 
-parseYearDatum :: [Int] -> YearData
-parseYearDatum [y, a, b] = YearData y a b
+-- parseYearDatum :: [Int] -> YearData
+-- parseYearDatum [y, a, b] = YearData y a b
 
+-- processFile :: FilePath -> IO [Key Ngram]
+processFile path = do
+  -- Infer ngram n-value from the first character of the filename
+  putStrLn $ "Now processing file: " ++ path
+  let n = read $ Prelude.take 1 $ takeFileName path :: Int
+  rawContent <- BSL.readFile path
+  let decompressed = GZip.decompress rawContent
+  let content = decodeUtf8 $ toStrict decompressed
+  let parsedNgrams = fmap (parseLine n) (T.lines content) :: [Ngram]
+  runSqlite "ngrams.db" $ do
+    runMigration migrateAll
+    insertMany parsedNgrams
+
+makeDB :: IO ()
+makeDB = do
+  paths <- glob "../data/*.gz"
+  print paths
+  mapM_ processFile paths
+
+testDB :: IO ()
+testDB = runSqlite "ngrams.db" $ do
+    let w1 = Just $ Word "," Nothing
+    let w2 = Just $ Word "narratology" Nothing
+    selected <- selectList [NgramW1 ==. w1, NgramW2 ==. w2] [LimitTo 1]
+    liftIO $ print selected
 
 main :: IO ()
 main = do
-  f <- TIO.readFile "../data/2-00000-of-00047"
-  -- let l = head $ Data.Text.lines f
-  --     parsedLine = parseLine l 2
-  let parsedNgrams = fmap (parseLine 2) (T.lines f) :: [Ngram]
-  runSqlite "test.db" $ do
-    runMigration migrateAll
-    -- let testWord = Word "test" (Just Noun)
-    -- let testItem = Ngram 2 testWord (Just testWord) Nothing Nothing Nothing "1981,1,2"
-    -- insert testItem
-    insertMany parsedNgrams
-    -- https://www.stackage.org/haddock/nightly-2021-10-29/persistent-2.13.2.1/Database-Persist-Class.html#v:selectList
-    let w1 = Just $ Word "'" Nothing
-    let w2 = Just $ Word "Narratology" Nothing
-    selected <- selectList [NgramW1 ==. w1, NgramW2 ==. w2] [LimitTo 1]
-    liftIO $ print selected
+  -- makeDB
+  testDB
