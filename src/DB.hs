@@ -18,11 +18,12 @@
 module DB where
 
 import           Control.Monad.IO.Class  (liftIO)
+import           Data.Text as T hiding (tail, head, drop)
 import           Database.Persist
 import           Database.Persist.Sqlite
 import           Database.Persist.TH
 import           Prelude hiding (Word, words, unwords)
-import           Data.Text as T hiding (drop, head, tail)
+import           Data.Text as T hiding (tail, head, drop, drop, head, tail)
 import           Data.Text.IO as TIO (readFile)
 import           Types
 
@@ -35,7 +36,7 @@ Ngram
     w3 Word Maybe
     w4 Word Maybe
     w5 Word Maybe
-    years Text
+    years YearsData
     deriving Show
 |]
 
@@ -46,6 +47,8 @@ Ngram
 -- 1992,1,1 1997,2,2 1998,1,1 1999,1,1 2001,8,1 2002,4,4 2003,5,4 2004,2,1
 -- 2005,3,3 2006,2,2 2007,5,3 2008,5,5 2009,3,3 2010,2,2 2011,13,4 2012,6,6
 -- 2013,6,5 2014,11,9 2015,6,4 2016,4,3 2017,7,4 2018,2,2 2019,5,3
+
+-- parseYears = [1000..]
 
 parseWord :: Text -> Maybe Word
 parseWord w = case T.find (== '_') w of
@@ -78,12 +81,22 @@ parseLine n line =
       firstWord = head lineWords
   in case n of
     1 -> let w1 = parseWord firstWord
-             yearsData = unwords (tail lineWords)
+             yearsData = parseYears $ unwords (tail lineWords)
          in Ngram 1 w1 Nothing Nothing Nothing Nothing yearsData
     2 -> let w1 = parseWord (head lineWords)
              w2 = parseWord (head (tail lineWords))
-             yearsData = unwords (drop 2 lineWords)
+             yearsData = parseYears $ unwords (drop 2 lineWords)
          in Ngram 2 w1 w2 Nothing Nothing Nothing yearsData
+
+parseYears :: Text -> [YearData]
+parseYears years = do
+  let yearList =  T.splitOn "," <$> words years :: [[Text]]
+  let yearsAsInts = fmap (fmap (read . T.unpack)) yearList :: [[Int]]
+  fmap parseYearDatum yearsAsInts
+
+parseYearDatum :: [Int] -> YearData
+parseYearDatum [y, a, b] = YearData y a b
+
 
 main :: IO ()
 main = do
@@ -97,5 +110,8 @@ main = do
     -- let testItem = Ngram 2 testWord (Just testWord) Nothing Nothing Nothing "1981,1,2"
     -- insert testItem
     insertMany parsedNgrams
-    selected <- selectList [NgramW1 ==. ngramW1 (parsedNgrams !! 1)] [LimitTo 1]
+    -- https://www.stackage.org/haddock/nightly-2021-10-29/persistent-2.13.2.1/Database-Persist-Class.html#v:selectList
+    let w1 = Just $ Word "'" Nothing
+    let w2 = Just $ Word "Narratology" Nothing
+    selected <- selectList [NgramW1 ==. w1, NgramW2 ==. w2] [LimitTo 1]
     liftIO $ print selected

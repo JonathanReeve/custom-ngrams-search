@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+module DownloadData where
+
 import qualified Data.ByteString.Char8 as B8
 import Network.HTTP.Simple
     ( getResponseBody, httpBS, parseRequest )

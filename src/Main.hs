@@ -7,17 +7,26 @@
 
 module Main where
 
-import Data.List
-import qualified Control.Foldl as Fold
-import "Glob" System.FilePath.Glob (glob)
 import qualified Codec.Compression.GZip as GZip
-import Text.JSON.Generic
-import GHC.Generics (Generic)
-import Turtle
+import qualified Control.Foldl as Fold
 import qualified Data.ByteString.Lazy as BS
-import qualified Data.ByteString.Lazy.UTF8 as UTF
-import qualified Data.Text as T
 import qualified Data.ByteString.Lazy.Char8 as Char8
+import qualified Data.ByteString.Lazy.UTF8 as UTF
+import           Data.List
+import qualified Data.Text as T
+import           GHC.Generics (Generic)
+import "Glob"    System.FilePath.Glob (glob)
+import           Text.JSON.Generic
+import           Text.Regex.TDFA.ByteString.Lazy
+import           Text.Regex.TDFA.Common
+import           Turtle
+import Text.Regex.TDFA
+import Data.Either (fromRight)
+import GHC.Arr ((!))
+import GHC.Int (Int64)
+import Data.Word8 (_lf)
+
+
 
 -- Find the first and last lines of each gzipped file
 -- So that we know where to direct our searches
@@ -90,6 +99,17 @@ main = do
   print filename
   let localFilename = remoteToLocal filename
   print localFilename
-  let grepped = inproc "rg" ["-z", "-e", query, T.pack localFilename] Turtle.empty
+  content <- fmap GZip.decompress (BS.readFile localFilename)
+  -- stdout $ grep "Dracula" content
+  let regexCompiled = compile defaultCompOpt defaultExecOpt "Dracula"
+  let compiled = case regexCompiled of
+                   Left err -> error "Can't compile expression"
+                   Right compiled -> compiled
+  let result = execute compiled content
+  let location = case result of
+        Left _ -> error "Can't find expression"
+        Right (Just xs) -> fst $ xs ! 0 :: Int
+  print $ BS.takeWhile (/= _lf) $ BS.drop (fromIntegral location :: Int64) content
+  -- let grepped = inproc "rg" ["-z", "-e", query, T.pack localFilename] Turtle.empty
                           -- T.pack query, format fp filename] empty
-  view grepped
+  -- view grepped

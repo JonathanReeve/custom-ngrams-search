@@ -28,3 +28,13 @@ data Word = Word
   , pos :: Maybe POS
   } deriving (Show, Read, Eq)
 derivePersistField "Word"
+
+-- data YearData = YearData
+--   { year :: Int
+--   , occurrencesA :: Int
+--   , occurrencesB :: Int
+--   } deriving (Show, Read, Eq)
+
+type YearData = (Int, Int, Int)
+type YearsData = [YearData]
+derivePersistField "YearsData"
