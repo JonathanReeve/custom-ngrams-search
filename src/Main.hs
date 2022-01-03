@@ -19,10 +19,19 @@ import "Glob"    System.FilePath.Glob (glob)
 import           Text.JSON.Generic
 import           Text.Regex.TDFA.ByteString.Lazy
 import           Text.Regex.TDFA.Common
-import           Turtle
+import Turtle
+    ( IsString(fromString),
+      Text,
+      basename,
+      filename,
+      decodeString,
+      encodeString,
+      optText,
+      options,
+      Parser )
 import Text.Regex.TDFA
 import Data.Either (fromRight)
-import GHC.Arr ((!))
+import GHC.Arr ((!), elems)
 import GHC.Int (Int64)
 import Data.Word8 (_lf)
 
@@ -85,6 +94,11 @@ greeting :: String
 greeting = concat [ "This program searches Google Books ngram data for advanced queries."
                   , "\nExamples: " ,  "\n -q Dracula "
                   , "\n -q bank_NOUN " ,  "\n -q \"river bank_NOUN\""]
+
+formatRegex :: T.Text -> T.Text
+formatRegex q = T.append "^" $ T.unwords $ Prelude.map appendSuffix (T.words q) where
+  appendSuffix w = "(" <> w <> ")" <> "(_[A-Z\\.]*)?"
+
 main :: IO ()
 main = do
   -- Test whether we have WordBounds
@@ -101,15 +115,28 @@ main = do
   print localFilename
   content <- fmap GZip.decompress (BS.readFile localFilename)
   -- stdout $ grep "Dracula" content
-  let regexCompiled = compile defaultCompOpt defaultExecOpt "Dracula"
-  let compiled = case regexCompiled of
-                   Left err -> error "Can't compile expression"
-                   Right compiled -> compiled
-  let result = execute compiled content
-  let location = case result of
-        Left _ -> error "Can't find expression"
-        Right (Just xs) -> fst $ xs ! 0 :: Int
-  print $ BS.takeWhile (/= _lf) $ BS.drop (fromIntegral location :: Int64) content
+  let regexFormatted = formatRegex query
+  let regexUTF = UTF.fromString $ T.unpack regexFormatted
+  print regexUTF
+  let matches = getAllTextMatches (UTF.toString content =~ regexFormatted) :: [String]
+  print matches
+  -- let options = ExecOption { captureGroups = False }
+  -- let regexCompiled = compile defaultCompOpt options regexUTF
+  -- let compiled = case regexCompiled of
+  --                  Left err -> error "Can't compile expression"
+  --                  Right compiled -> compiled
+  -- let result = execute compiled content
+  -- -- print result
+  -- let locationsArr = case result of
+  --       Left _ -> error "Can't find expression"
+  --       Right (Just xs) -> xs
+  -- print locationsArr
+  -- let locations = nub $ filter (>0) [ fst item | item <- elems locationsArr ]
+  -- print locations
+  -- putStrLn $ "Found " <> show (length locations + 1)  <> " results"
+  -- let locToText loc = BS.takeWhile (/= _lf) $ BS.drop (fromIntegral loc :: Int64) content
+  -- let contexts = map locToText locations
+  -- mapM_ (putStrLn . UTF.toString) contexts
   -- let grepped = inproc "rg" ["-z", "-e", query, T.pack localFilename] Turtle.empty
                           -- T.pack query, format fp filename] empty
   -- view grepped
