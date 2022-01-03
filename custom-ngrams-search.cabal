@@ -10,20 +10,20 @@ description: Search the Google Ngrams dataset for custom values, like parts of s
 -- license: GPLv3
 license-file:        LICENSE
 author:              Jonathan Reeve
-maintainer:          jon.reeve@gmail.com
+maintainer:          jonathan@jonreeve.com
 -- copyright:
 -- category:
 build-type:          Simple
 extra-source-files:  CHANGELOG.md, README.org
 
-executable custom-ngrams-search
+executable custom-ngrams-search-cli
   hs-source-dirs:      src
-  main-is:             Main.hs
+  main-is:             CLI.hs
+  ghc-options:         -main-is CLI
   other-modules:       DownloadData
                      , Scrape
                      , DB
                      , Types
-  -- other-extensions:
   build-depends:       base >=4.14
                      , aeson
                      , directory
@@ -51,5 +51,41 @@ executable custom-ngrams-search
                      , regex-tdfa
                      , word8
                      , filepath
-  -- hs-source-dirs:
+  default-language:    Haskell2010
+
+executable custom-ngrams-search-web
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  other-modules:       DownloadData
+                     , Scrape
+                     , DB
+                     , Types
+  build-depends:       base >=4.14
+                     , aeson
+                     , directory
+                     , json
+                     , bytestring
+                     , dhall
+                     , haskell-language-server
+                     , http-conduit
+                     , HandsomeSoup
+                     , Glob
+                     , zlib
+                     , aeson
+                     , foldl
+                     , hxt
+                     , lucid
+                     , network-uri
+                     , scotty
+                     , string-conversions
+                     , persistent
+                     , persistent-sqlite
+                     , persistent-template
+                     , text
+                     , turtle
+                     , utf8-string
+                     , optparse-applicative
+                     , regex-tdfa
+                     , word8
+                     , filepath
   default-language:    Haskell2010

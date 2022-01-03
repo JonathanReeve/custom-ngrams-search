@@ -2,7 +2,7 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main where
+module Web where
 
 import Web.Scotty
 
