@@ -8,7 +8,9 @@ But what if you have an advanced use-case, or run up against limitations in the 
  - Search for expressions where one word is unknown, like "capable of ___ing," and fill in the blanks with all possible responses.
  - Do a regular expression search.
 
-* Usage
+* CLI Usage
+
+You can run this yourself if you have lots of space free on your machine.
 
 1. Make sure you have [[https://nixos.org/][the Nix package manager]] installed. On Linux or MacOS, you can usually do this with
 
@@ -16,10 +18,30 @@ But what if you have an advanced use-case, or run up against limitations in the 
 $ sh <(curl https://nixos.org/nix/install)
 #+END_SRC
 
-1. Download the data from Google, using the download script (TODO). There are a LOT of data. You will need many around 20GB of space free for just 2-grams, and around 100GB of space free for everything.
-
-2. Run the script:
+Then run:
 
 #+BEGIN_SRC sh
-cabal run custom-ngrams-search -- searchTerm
+nix-shell
+#+END_SRC
+
+2. Download the data from Google, using the download script:
+
+#+BEGIN_SRC sh
+cd src
+runhaskell DownloadData
+#+END_SRC
+
+There are a lot of very big files. Not only are the gzipped files hude, but you will need 3GB of space free per gzip file, for the database. That results in a ~140GB database file, just for unigrams and bigrams.
+
+2. Generate the database:
+
+#+BEGIN_SRC sh
+runhaskell DB
+#+END_SRC
+
+3. Or, run the regex-based script:
+
+#+BEGIN_SRC sh
+# From the project root directory
+nix-shell --run "cabal run custom-ngrams-search -- -q searchTerm"
 #+END_SRC
