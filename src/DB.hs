@@ -31,6 +31,7 @@ import           Data.Text as T hiding (tail, head, drop, drop, head, tail)
 import           Data.Text.IO as TIO (readFile)
 import "Glob"    System.FilePath.Glob (glob)
 import           System.FilePath.Posix
+import           System.Environment (getEnv)
 
 import           Types
 import Data.Text.Encoding (decodeUtf8)
@@ -116,14 +117,16 @@ processFile path = do
   let decompressed = GZip.decompress rawContent
   let content = decodeUtf8 $ toStrict decompressed
   let parsedNgrams = fmap (parseLine n) (T.lines content) :: [Ngram]
-  runSqlite "ngrams.db" $ do
+  dbLocation <- getEnv "NGRAMS_DB_LOCATION"
+  runSqlite (T.pack dbLocation) $ do
     runMigration migrateAll
     insertMany parsedNgrams
-  appendFile "processedFiles" path
+  appendFile "processedFiles" ("\n" ++ path)
 
 makeDB :: IO ()
 makeDB = do
-  paths <- glob "../data/*.gz"
+  dataLocation <- getEnv "NGRAMS_GZ_LOCATION"
+  paths <- glob (dataLocation ++ "/*.gz") -- "../data/*.gz"
   processed <- Prelude.readFile "processedFiles"
   let processedAlready = Prelude.lines processed
   let pathsRemaining = [ path | path <- paths, not (path `elem` processedAlready) ]
@@ -132,7 +135,9 @@ makeDB = do
   mapM_ processFile pathsRemaining
 
 testDB :: IO ()
-testDB = runSqlite "ngrams.db" $ do
+testDB = do
+  dbLocation <- getEnv "NGRAMS_DB_LOCATION"
+  runSqlite (T.pack dbLocation) $ do
     let w1 = Just $ Word "," Nothing
     let w2 = Just $ Word "narratology" Nothing
     selected <- selectList [NgramW1 ==. w1, NgramW2 ==. w2] [LimitTo 1]
@@ -141,4 +146,4 @@ testDB = runSqlite "ngrams.db" $ do
 main :: IO ()
 main = do
   makeDB
-  -- testDB
+  testDB
