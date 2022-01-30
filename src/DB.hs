@@ -119,12 +119,17 @@ processFile path = do
   runSqlite "ngrams.db" $ do
     runMigration migrateAll
     insertMany parsedNgrams
+  appendFile "processedFiles" path
 
 makeDB :: IO ()
 makeDB = do
   paths <- glob "../data/*.gz"
+  processed <- Prelude.readFile "processedFiles"
+  let processedAlready = Prelude.lines processed
+  let pathsRemaining = [ path | path <- paths, not (path `elem` processedAlready) ]
   print paths
-  mapM_ processFile paths
+  print pathsRemaining
+  mapM_ processFile pathsRemaining
 
 testDB :: IO ()
 testDB = runSqlite "ngrams.db" $ do
@@ -135,5 +140,5 @@ testDB = runSqlite "ngrams.db" $ do
 
 main :: IO ()
 main = do
-  -- makeDB
-  testDB
+  makeDB
+  -- testDB
